@@ -1,0 +1,33 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --brand-primary: #1a56db;
+  --brand-accent: #e3a008;
+  --brand-font: 'Inter';
+}
+
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900 font-sans;
+  }
+}
+
+@layer utilities {
+  .brand-primary {
+    color: var(--brand-primary);
+  }
+  .bg-brand-primary {
+    background-color: var(--brand-primary);
+  }
+  .border-brand-primary {
+    border-color: var(--brand-primary);
+  }
+  .brand-accent {
+    color: var(--brand-accent);
+  }
+  .bg-brand-accent {
+    background-color: var(--brand-accent);
+  }
+}

@@ -13,6 +13,7 @@ export interface Database {
         Row: {
           id: string
           logo_url: string | null
+          frame_url: string | null
           primary_color: string
           accent_color: string
           font_family: string

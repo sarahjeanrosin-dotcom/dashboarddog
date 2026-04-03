@@ -19,11 +19,24 @@ export interface Database {
           font_family: string
           updated_at: string
         }
-        Insert: Omit<Database['public']['Tables']['branding']['Row'], 'id' | 'updated_at'> & {
+        Insert: {
           id?: string
+          logo_url?: string | null
+          frame_url?: string | null
+          primary_color?: string
+          accent_color?: string
+          font_family?: string
           updated_at?: string
         }
-        Update: Partial<Database['public']['Tables']['branding']['Insert']>
+        Update: {
+          id?: string
+          logo_url?: string | null
+          frame_url?: string | null
+          primary_color?: string
+          accent_color?: string
+          font_family?: string
+          updated_at?: string
+        }
       }
       verticals: {
         Row: {
@@ -32,11 +45,18 @@ export interface Database {
           slug: string
           created_at: string
         }
-        Insert: Omit<Database['public']['Tables']['verticals']['Row'], 'id' | 'created_at'> & {
+        Insert: {
           id?: string
+          name: string
+          slug: string
           created_at?: string
         }
-        Update: Partial<Database['public']['Tables']['verticals']['Insert']>
+        Update: {
+          id?: string
+          name?: string
+          slug?: string
+          created_at?: string
+        }
       }
       roles: {
         Row: {
@@ -47,11 +67,22 @@ export interface Database {
           avatar_emoji: string
           created_at: string
         }
-        Insert: Omit<Database['public']['Tables']['roles']['Row'], 'id' | 'created_at'> & {
+        Insert: {
           id?: string
+          vertical_id: string
+          title: string
+          blurb?: string
+          avatar_emoji?: string
           created_at?: string
         }
-        Update: Partial<Database['public']['Tables']['roles']['Insert']>
+        Update: {
+          id?: string
+          vertical_id?: string
+          title?: string
+          blurb?: string
+          avatar_emoji?: string
+          created_at?: string
+        }
       }
       widgets: {
         Row: {
@@ -62,11 +93,22 @@ export interface Database {
           masked_url: string | null
           created_at: string
         }
-        Insert: Omit<Database['public']['Tables']['widgets']['Row'], 'id' | 'created_at'> & {
+        Insert: {
           id?: string
+          name: string
+          description?: string
+          screenshot_url?: string | null
+          masked_url?: string | null
           created_at?: string
         }
-        Update: Partial<Database['public']['Tables']['widgets']['Insert']>
+        Update: {
+          id?: string
+          name?: string
+          description?: string
+          screenshot_url?: string | null
+          masked_url?: string | null
+          created_at?: string
+        }
       }
       role_widgets: {
         Row: {
@@ -79,10 +121,26 @@ export interface Database {
           w: number
           h: number
         }
-        Insert: Omit<Database['public']['Tables']['role_widgets']['Row'], 'id'> & {
+        Insert: {
           id?: string
+          role_id: string
+          widget_id: string
+          position?: number
+          x?: number
+          y?: number
+          w?: number
+          h?: number
         }
-        Update: Partial<Database['public']['Tables']['role_widgets']['Insert']>
+        Update: {
+          id?: string
+          role_id?: string
+          widget_id?: string
+          position?: number
+          x?: number
+          y?: number
+          w?: number
+          h?: number
+        }
       }
       dashboard_layouts: {
         Row: {
@@ -92,11 +150,20 @@ export interface Database {
           layout_json: Json
           updated_at: string
         }
-        Insert: Omit<Database['public']['Tables']['dashboard_layouts']['Row'], 'id' | 'updated_at'> & {
+        Insert: {
           id?: string
+          vertical_id: string
+          role_id: string
+          layout_json?: Json
           updated_at?: string
         }
-        Update: Partial<Database['public']['Tables']['dashboard_layouts']['Insert']>
+        Update: {
+          id?: string
+          vertical_id?: string
+          role_id?: string
+          layout_json?: Json
+          updated_at?: string
+        }
       }
     }
     Views: Record<string, never>

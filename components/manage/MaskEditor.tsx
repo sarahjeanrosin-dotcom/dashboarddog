@@ -1,11 +1,12 @@
 'use client'
 
 import { useRef, useState, useEffect } from 'react'
-import { Stage, Layer, Image as KonvaImage, Rect, Transformer } from 'react-konva'
+import { Stage, Layer, Image as KonvaImage, Rect, Text, Transformer } from 'react-konva'
 import Konva from 'konva'
 import { createClient } from '@/lib/supabase/client'
 import type { Widget } from '@/lib/supabase/types'
-import { Plus, Save, X, Trash2 } from 'lucide-react'
+import { Plus, Save, X, Trash2, Sparkles, Loader2 } from 'lucide-react'
+import type { PiiItem } from '@/app/api/detect-pii/route'
 
 interface MaskRect {
   id: string
@@ -13,6 +14,9 @@ interface MaskRect {
   y: number
   width: number
   height: number
+  /** If set, renders replacement text instead of a black box */
+  replacementText?: string
+  bgColor?: string
 }
 
 interface Props {
@@ -33,6 +37,8 @@ export default function MaskEditor({ widget, onSave, onCancel }: Props) {
   const [isDrawing, setIsDrawing] = useState(false)
   const [drawStart, setDrawStart] = useState({ x: 0, y: 0 })
   const [saving, setSaving] = useState(false)
+  const [detecting, setDetecting] = useState(false)
+  const [detectError, setDetectError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!widget.screenshot_url) return
@@ -49,7 +55,7 @@ export default function MaskEditor({ widget, onSave, onCancel }: Props) {
 
   function addMask() {
     const id = `mask-${Date.now()}`
-    setMasks(prev => [...prev, { id, x: 50, y: 50, width: 120, height: 60 }])
+    setMasks(prev => [...prev, { id, x: 50, y: 50, width: 120, height: 30 }])
     setSelectedId(id)
   }
 
@@ -58,8 +64,54 @@ export default function MaskEditor({ widget, onSave, onCancel }: Props) {
     if (selectedId === id) setSelectedId(null)
   }
 
+  async function handleAiDetect() {
+    if (!widget.screenshot_url) return
+    setDetecting(true)
+    setDetectError(null)
+
+    try {
+      const res = await fetch('/api/detect-pii', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ imageUrl: widget.screenshot_url }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Detection failed')
+
+      const items: PiiItem[] = data.items ?? []
+      if (items.length === 0) {
+        setDetectError('No PII detected in this screenshot.')
+        return
+      }
+
+      // Convert normalized coords to pixel coords
+      const newMasks: MaskRect[] = items.map((item, i) => {
+        const px = item.x * imgSize.w
+        const py = item.y * imgSize.h
+        const pw = item.w * imgSize.w
+        const ph = item.h * imgSize.h
+
+        // Estimate font size from box height (roughly 65% of height)
+        return {
+          id: `ai-${Date.now()}-${i}`,
+          x: px,
+          y: py,
+          width: Math.max(pw, 20),
+          height: Math.max(ph, 16),
+          replacementText: item.replacement,
+          bgColor: '#f0f0f0',
+        }
+      })
+
+      setMasks(prev => [...prev, ...newMasks])
+    } catch (err) {
+      setDetectError(err instanceof Error ? err.message : 'Detection failed')
+    } finally {
+      setDetecting(false)
+    }
+  }
+
   function onMouseDown(e: Konva.KonvaEventObject<MouseEvent>) {
-    // Only draw on empty area
     if (e.target === e.target.getStage() || e.target.attrs.id === 'bg-image') {
       const pos = e.target.getStage()!.getPointerPosition()!
       setIsDrawing(true)
@@ -94,7 +146,6 @@ export default function MaskEditor({ widget, onSave, onCancel }: Props) {
 
   function onMouseUp() {
     setIsDrawing(false)
-    // Finalize the drawn rect
     setMasks(prev => prev.map(m =>
       m.id.startsWith('draw-')
         ? { ...m, id: `mask-${Date.now()}` }
@@ -106,7 +157,6 @@ export default function MaskEditor({ widget, onSave, onCancel }: Props) {
     if (!stageRef.current) return
     setSaving(true)
 
-    // Export stage as blob
     const dataUrl = stageRef.current.toDataURL({ pixelRatio: 2 })
     const res = await fetch(dataUrl)
     const blob = await res.blob()
@@ -131,9 +181,19 @@ export default function MaskEditor({ widget, onSave, onCancel }: Props) {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-lg font-bold text-gray-900">Mask Editor</h2>
-          <p className="text-sm text-gray-500">Draw black boxes over sensitive data in <strong>{widget.name}</strong></p>
+          <p className="text-sm text-gray-500">Anonymize sensitive data in <strong>{widget.name}</strong></p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 justify-end">
+          <button
+            onClick={handleAiDetect}
+            disabled={detecting || !widget.screenshot_url}
+            className="flex items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2 text-sm text-purple-700 hover:bg-purple-100 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {detecting
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <Sparkles className="w-4 h-4" />}
+            {detecting ? 'Detecting…' : 'AI Detect PII'}
+          </button>
           <button onClick={addMask} className="flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm hover:bg-gray-50">
             <Plus className="w-4 h-4" /> Add mask
           </button>
@@ -155,7 +215,18 @@ export default function MaskEditor({ widget, onSave, onCancel }: Props) {
         </div>
       </div>
 
-      <p className="text-xs text-gray-400">Click and drag on the image to draw a mask box, or use &quot;Add mask&quot; to place and resize one.</p>
+      {detectError && (
+        <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-2 text-sm text-amber-700">
+          {detectError}
+        </div>
+      )}
+
+      <p className="text-xs text-gray-400">
+        Click <strong>AI Detect PII</strong> to auto-detect names, dates, emails and replace them with anonymized data.
+        Or draw boxes manually by dragging on the image.
+        <span className="ml-2 inline-flex items-center gap-1"><span className="inline-block w-3 h-3 bg-black rounded-sm" /> = redacted</span>
+        <span className="ml-2 inline-flex items-center gap-1"><span className="inline-block w-3 h-3 bg-gray-200 border border-gray-300 rounded-sm" /> = AI replaced</span>
+      </p>
 
       <div className="rounded-xl border border-gray-200 overflow-auto bg-gray-100 p-2">
         {image ? (
@@ -175,27 +246,65 @@ export default function MaskEditor({ widget, onSave, onCancel }: Props) {
                 width={imgSize.w}
                 height={imgSize.h}
               />
-              {masks.map(mask => (
-                <Rect
-                  key={mask.id}
-                  id={mask.id}
-                  x={mask.x}
-                  y={mask.y}
-                  width={mask.width}
-                  height={mask.height}
-                  fill="black"
-                  draggable
-                  onClick={() => setSelectedId(mask.id)}
-                  onTap={() => setSelectedId(mask.id)}
-                  onDragEnd={e => {
-                    setMasks(prev => prev.map(m =>
-                      m.id === mask.id ? { ...m, x: e.target.x(), y: e.target.y() } : m
-                    ))
-                  }}
-                  stroke={selectedId === mask.id ? '#3b82f6' : undefined}
-                  strokeWidth={selectedId === mask.id ? 2 : 0}
-                />
-              ))}
+              {masks.map(mask => {
+                const fontSize = Math.max(10, Math.round(mask.height * 0.6))
+                return mask.replacementText ? (
+                  // AI replacement: background rect + anonymized text
+                  <>
+                    <Rect
+                      key={`${mask.id}-bg`}
+                      id={mask.id}
+                      x={mask.x}
+                      y={mask.y}
+                      width={mask.width}
+                      height={mask.height}
+                      fill={mask.bgColor ?? '#f0f0f0'}
+                      stroke={selectedId === mask.id ? '#8b5cf6' : '#d1d5db'}
+                      strokeWidth={selectedId === mask.id ? 2 : 1}
+                      draggable
+                      onClick={() => setSelectedId(mask.id)}
+                      onTap={() => setSelectedId(mask.id)}
+                      onDragEnd={e => {
+                        setMasks(prev => prev.map(m =>
+                          m.id === mask.id ? { ...m, x: e.target.x(), y: e.target.y() } : m
+                        ))
+                      }}
+                    />
+                    <Text
+                      key={`${mask.id}-text`}
+                      x={mask.x + 2}
+                      y={mask.y + (mask.height - fontSize) / 2}
+                      width={mask.width - 4}
+                      text={mask.replacementText}
+                      fontSize={fontSize}
+                      fill="#374151"
+                      listening={false}
+                      ellipsis
+                    />
+                  </>
+                ) : (
+                  // Manual mask: black box
+                  <Rect
+                    key={mask.id}
+                    id={mask.id}
+                    x={mask.x}
+                    y={mask.y}
+                    width={mask.width}
+                    height={mask.height}
+                    fill="black"
+                    draggable
+                    onClick={() => setSelectedId(mask.id)}
+                    onTap={() => setSelectedId(mask.id)}
+                    onDragEnd={e => {
+                      setMasks(prev => prev.map(m =>
+                        m.id === mask.id ? { ...m, x: e.target.x(), y: e.target.y() } : m
+                      ))
+                    }}
+                    stroke={selectedId === mask.id ? '#3b82f6' : undefined}
+                    strokeWidth={selectedId === mask.id ? 2 : 0}
+                  />
+                )
+              })}
               <Transformer
                 ref={transformerRef}
                 boundBoxFunc={(oldBox, newBox) => newBox}

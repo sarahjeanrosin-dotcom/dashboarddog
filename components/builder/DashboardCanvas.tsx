@@ -203,7 +203,7 @@ export default function DashboardCanvas() {
                   cursor: dragging || resizing ? 'grabbing' : 'default',
                 }}
               >
-                {/* Role text overlay — AI-detected position */}
+                {/* Role text overlay — covers "ROLE HERE" placeholder in the frame */}
                 {roleOverlay && selectedRole && (
                   <div
                     style={{
@@ -214,11 +214,16 @@ export default function DashboardCanvas() {
                       height: `${roleOverlay.h * 100}%`,
                       display: 'flex',
                       alignItems: 'center',
+                      paddingLeft: '4%',
                       fontFamily,
-                      color: primaryColor,
-                      fontWeight: 700,
-                      fontSize: `${roleOverlay.h * 40}cqw`,
+                      // White opaque background covers the original "ROLE HERE" text
+                      backgroundColor: 'rgba(255,255,255,0.97)',
+                      color: '#111827',
+                      fontWeight: 600,
+                      // Font sized to ~65% of box height, capped so it doesn't overflow
+                      fontSize: `clamp(0.5cqw, ${roleOverlay.h * 65}%, 1.4cqw)`,
                       overflow: 'hidden',
+                      whiteSpace: 'nowrap',
                       pointerEvents: 'none',
                       zIndex: 5,
                     }}
@@ -343,7 +348,7 @@ function renderWidgets({
         onMouseDown={e => onWidgetMouseDown(e, item.widget_id)}
       >
         {imgSrc ? (
-          <Image src={imgSrc} alt={widget.name} fill className="object-cover" draggable={false} />
+          <Image src={imgSrc} alt={widget.name} fill className="object-contain" draggable={false} />
         ) : (
           <div className="flex items-center justify-center h-full bg-gray-100 text-gray-400 p-2 text-center" style={{ fontSize: '0.75cqw' }}>
             {widget.name}

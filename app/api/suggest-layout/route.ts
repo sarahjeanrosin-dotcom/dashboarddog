@@ -36,29 +36,29 @@ export async function POST(req: NextRequest) {
   }
 
   const prompt = frameUrl
-    ? `This is a product dashboard screenshot that will be used as a frame/background. I need to overlay ${widgetCount} widget screenshot(s) on top of it.
+    ? `This is a product dashboard screenshot used as a background frame. I need to overlay ${widgetCount} widget screenshot(s) on top of it.
 
 Analyze the image and:
-1. Identify the main CONTENT AREA where dashboard widgets/panels would go (avoid the sidebar nav, top bar, and any fixed chrome UI)
-2. Suggest an optimal grid layout for exactly ${widgetCount} widget(s) within that content area
-3. Look for any placeholder text like "Role Here", "YOUR ROLE", "Title Here", "PERSONA", "INSERT NAME", etc.
+1. Find the main CONTENT AREA (the scrollable/widget region — excludes left sidebar nav, top navigation bar, tab bars, and other fixed chrome)
+2. Suggest a grid layout for exactly ${widgetCount} widget(s) placed ONLY within the content area
+3. Find any placeholder text like "ROLE HERE", "Role Here", "YOUR ROLE", "Title Here", "PERSONA NAME", "INSERT ROLE" etc. — look especially in tab bars and breadcrumb areas
 
-${widgetCount > 1 ? `For ${widgetCount} widgets: arrange in a grid. If they don't all fit in one screen height, let rows continue below (y values can exceed 1.0 — values from 1.0–2.0 represent the second scroll page, 2.0–3.0 the third, etc.).` : ''}
+${widgetCount > 1 ? `For ${widgetCount} widgets: use a grid. If they don't fit in one screen, extend below (y > 1.0 = second page, y > 2.0 = third page).` : ''}
 
-Return ONLY valid JSON (no markdown):
+Return ONLY valid JSON (no markdown, no explanation):
 {
   "widgets": [
-    { "x": 0.0, "y": 0.0, "w": 0.45, "h": 0.45 }
+    { "x": 0.05, "y": 0.15, "w": 0.43, "h": 0.40 }
   ],
-  "roleOverlay": { "x": 0.0, "y": 0.0, "w": 0.3, "h": 0.08 }
+  "roleOverlay": { "x": 0.05, "y": 0.28, "w": 0.18, "h": 0.04 }
 }
 
-Rules:
-- All values are fractions of the CONTENT AREA dimensions (0.0 to 1.0 per screen height)
-- Return exactly ${widgetCount} widget placement(s)
-- Leave small gaps between widgets (0.01–0.02)
-- roleOverlay is the bounding box of the role/persona placeholder text, or null if none found
-- Widgets should NOT overlap the product's own nav/sidebar/header UI elements`
+IMPORTANT coordinate rules:
+- ALL values are fractions of the FULL IMAGE dimensions (0.0 = left/top edge, 1.0 = right/bottom edge)
+- Widget x/y must be INSIDE the content area (past the left nav and top bar)
+- Leave 0.01–0.02 gaps between widgets
+- roleOverlay: exact bounding box of the placeholder tab/label text in the image, or null
+- Widgets must NOT overlap the product sidebar, top nav, or tab bar`
     : `Suggest an optimal grid layout for ${widgetCount} dashboard widget(s) in a clean content area.
 
 Return ONLY valid JSON:

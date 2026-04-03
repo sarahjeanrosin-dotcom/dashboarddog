@@ -5,7 +5,9 @@ import Image from 'next/image'
 import { createClient } from '@/lib/supabase/client'
 import type { Widget } from '@/lib/supabase/types'
 import { Plus, Trash2, Pencil, Upload, Eraser } from 'lucide-react'
-import MaskEditor from './MaskEditor'
+import dynamic from 'next/dynamic'
+
+const MaskEditor = dynamic(() => import('./MaskEditor'), { ssr: false })
 
 interface Props {
   initialWidgets: Widget[]

@@ -3,19 +3,20 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import type { VerticalWithRoles } from '@/lib/supabase/types'
+import type { VerticalWithRoles, Widget } from '@/lib/supabase/types'
 import { Plus, ChevronDown, ChevronRight, Trash2, Pencil } from 'lucide-react'
 import RolesManager from './RolesManager'
 
 interface Props {
   initialVerticals: VerticalWithRoles[]
+  allWidgets: Pick<Widget, 'id' | 'name' | 'screenshot_url' | 'masked_url'>[]
 }
 
 function slugify(str: string) {
   return str.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
 }
 
-export default function VerticalsManager({ initialVerticals }: Props) {
+export default function VerticalsManager({ initialVerticals, allWidgets }: Props) {
   const router = useRouter()
   const supabase = createClient()
 
@@ -131,6 +132,7 @@ export default function VerticalsManager({ initialVerticals }: Props) {
                 <RolesManager
                   verticalId={vertical.id}
                   initialRoles={vertical.roles ?? []}
+                  allWidgets={allWidgets}
                   onRolesChange={roles =>
                     setVerticals(verticals.map(v =>
                       v.id === vertical.id ? { ...v, roles } : v

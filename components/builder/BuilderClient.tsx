@@ -68,7 +68,7 @@ export default function BuilderClient({ verticals, branding }: Props) {
 
     async function load() {
       setLoadingWidgets(true)
-      const [{ data: roleWidgetsData }, { data: savedLayout }] = await Promise.all([
+      const [{ data: roleWidgetsData }, layoutResult] = await Promise.all([
         supabase
           .from('role_widgets')
           .select('*, widget:widgets(*)')
@@ -79,7 +79,7 @@ export default function BuilderClient({ verticals, branding }: Props) {
           .select('layout_json')
           .eq('vertical_id', selectedVertical!.id)
           .eq('role_id', selectedRole!.id)
-          .single(),
+          .maybeSingle(),
       ])
       setLoadingWidgets(false)
 
@@ -87,8 +87,9 @@ export default function BuilderClient({ verticals, branding }: Props) {
       const widgetList = rw.map(r => r.widget)
       setWidgets(widgetList)
 
-      if (savedLayout?.layout_json && Array.isArray(savedLayout.layout_json) && savedLayout.layout_json.length > 0) {
-        setLayout(savedLayout.layout_json as WidgetLayout[])
+      const savedJson = layoutResult.data?.layout_json
+      if (savedJson && Array.isArray(savedJson) && savedJson.length > 0) {
+        setLayout(savedJson as WidgetLayout[])
       } else {
         setLayout(suggestLayout(widgetList))
       }

@@ -68,26 +68,26 @@ export default function BuilderClient({ verticals, branding }: Props) {
 
     async function load() {
       setLoadingWidgets(true)
-      const [{ data: roleWidgetsData }, layoutResult] = await Promise.all([
-        supabase
-          .from('role_widgets')
-          .select('*, widget:widgets(*)')
-          .eq('role_id', selectedRole!.id)
-          .order('position'),
-        supabase
-          .from('dashboard_layouts')
-          .select('layout_json')
-          .eq('vertical_id', selectedVertical!.id)
-          .eq('role_id', selectedRole!.id)
-          .maybeSingle() as Promise<{ data: { layout_json: unknown } | null, error: unknown }>,
-      ])
+      const { data: roleWidgetsData } = await supabase
+        .from('role_widgets')
+        .select('*, widget:widgets(*)')
+        .eq('role_id', selectedRole!.id)
+        .order('position')
+
+      const { data: layoutData } = await supabase
+        .from('dashboard_layouts')
+        .select('layout_json')
+        .eq('vertical_id', selectedVertical!.id)
+        .eq('role_id', selectedRole!.id)
+        .maybeSingle()
+
       setLoadingWidgets(false)
 
       const rw = (roleWidgetsData ?? []) as (RoleWidget & { widget: Widget })[]
       const widgetList = rw.map(r => r.widget)
       setWidgets(widgetList)
 
-      const savedJson = (layoutResult.data as { layout_json: unknown } | null)?.layout_json
+      const savedJson = layoutData?.layout_json
       if (savedJson && Array.isArray(savedJson) && savedJson.length > 0) {
         setLayout(savedJson as WidgetLayout[])
       } else {

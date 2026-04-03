@@ -29,7 +29,6 @@ interface ResizeState extends DragState {
   startH: number
 }
 
-// Nav items that appear in the mock product sidebar
 const PRODUCT_NAV = [
   { icon: LayoutDashboard, label: 'Dashboard' },
   { icon: BarChart2, label: 'Analytics' },
@@ -39,25 +38,43 @@ const PRODUCT_NAV = [
 ]
 
 export default function DashboardCanvas() {
-  const { widgets, layout, updateWidgetPosition, branding, selectedRole, selectedVertical } = useBuilderStore()
+  const { widgets, layout, updateWidgetPosition, branding, selectedRole, selectedVertical, roleOverlay } = useBuilderStore()
   const widgetAreaRef = useRef<HTMLDivElement>(null)
+  const rightPanelRef = useRef<HTMLDivElement>(null)
 
   const [dragging, setDragging] = useState<DragState | null>(null)
   const [resizing, setResizing] = useState<ResizeState | null>(null)
+  // Natural aspect ratio of the frame image (width/height)
+  const [frameAspect, setFrameAspect] = useState<number | null>(null)
 
   const primaryColor = branding?.primary_color ?? '#1a56db'
   const accentColor = branding?.accent_color ?? '#e3a008'
   const fontFamily = branding?.font_family ?? 'Inter'
   const frameUrl = (branding as (typeof branding & { frame_url?: string | null }))?.frame_url ?? null
 
-  // Load the selected font
   useEffect(() => { loadGoogleFont(fontFamily) }, [fontFamily])
 
-  function getWidgetAreaRect() {
+  // Detect natural aspect ratio of the frame image
+  useEffect(() => {
+    if (!frameUrl) { setFrameAspect(null); return }
+    const img = new window.Image()
+    img.onload = () => setFrameAspect(img.naturalWidth / img.naturalHeight)
+    img.src = frameUrl
+  }, [frameUrl])
+
+  // How many "screens tall" the widget content is (1.0 = one viewport, 2.0 = two, etc.)
+  const heightMultiplier = Math.max(
+    1.0,
+    layout.reduce((max, item) => Math.max(max, item.y + item.h), 0) + 0.04
+  )
+
+  function getWidgetAreaSize() {
     const el = widgetAreaRef.current
     if (!el) return { width: 1, height: 1 }
-    const rect = el.getBoundingClientRect()
-    return { width: rect.width, height: rect.height }
+    // Use the natural height (scrollHeight / heightMultiplier) as the "one screen" unit
+    const width = el.offsetWidth
+    const height = el.scrollHeight / heightMultiplier
+    return { width, height }
   }
 
   const onWidgetMouseDown = useCallback((e: React.MouseEvent, widgetId: string) => {
@@ -76,14 +93,14 @@ export default function DashboardCanvas() {
   }, [layout])
 
   const onMouseMove = useCallback((e: React.MouseEvent) => {
-    const { width, height } = getWidgetAreaRect()
+    const { width, height } = getWidgetAreaSize()
     if (dragging) {
       const dx = (e.clientX - dragging.startMouseX) / width
       const dy = (e.clientY - dragging.startMouseY) / height
       const item = layout.find(l => l.widget_id === dragging.widgetId)!
       updateWidgetPosition(dragging.widgetId, {
         x: Math.max(0, Math.min(1 - item.w, dragging.startX + dx)),
-        y: Math.max(0, Math.min(1 - item.h, dragging.startY + dy)),
+        y: Math.max(0, dragging.startY + dy),
       })
     }
     if (resizing) {
@@ -91,9 +108,10 @@ export default function DashboardCanvas() {
       const dy = (e.clientY - resizing.startMouseY) / height
       updateWidgetPosition(resizing.widgetId, {
         w: Math.max(0.1, Math.min(1 - resizing.startX, resizing.startW + dx)),
-        h: Math.max(0.1, Math.min(1 - resizing.startY, resizing.startH + dy)),
+        h: Math.max(0.1, resizing.startH + dy),
       })
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dragging, resizing, layout, updateWidgetPosition])
 
   const onMouseUp = useCallback(() => {
@@ -101,18 +119,23 @@ export default function DashboardCanvas() {
     setResizing(null)
   }, [])
 
-  // Darken primary color slightly for nav hover states
-  const darkPrimary = primaryColor + 'cc'
+  // Expose right panel ref for export (multi-slide)
+  useEffect(() => {
+    const el = rightPanelRef.current
+    if (el) (el as HTMLDivElement & { __builderScrollRef?: boolean }).__builderScrollRef = true
+  }, [])
+
+  const canvasAspect = frameAspect ?? (16 / 9)
 
   return (
     <div className="space-y-2" onMouseMove={onMouseMove} onMouseUp={onMouseUp} onMouseLeave={onMouseUp}>
-      {/* Outer slide frame — 16:9 */}
+      {/* Outer slide frame */}
       <div
         id="dashboard-canvas"
-        className="relative w-full overflow-hidden rounded-xl border border-gray-300 shadow-lg select-none"
-        style={{ aspectRatio: '16/9', fontFamily, userSelect: 'none' }}
+        className="relative w-full rounded-xl border border-gray-300 shadow-lg select-none overflow-hidden"
+        style={{ aspectRatio: `${canvasAspect}`, fontFamily, userSelect: 'none' }}
       >
-        {/* ── LEFT: Branded export sidebar (20%) ── */}
+        {/* LEFT: Branded export sidebar */}
         <div
           className="absolute left-0 top-0 h-full w-[20%] flex flex-col p-[3%] z-10"
           style={{ backgroundColor: primaryColor }}
@@ -144,27 +167,78 @@ export default function DashboardCanvas() {
           <div className="mt-[6%] h-[0.4%] rounded-full w-[30%]" style={{ backgroundColor: accentColor }} />
         </div>
 
-        {/* ── RIGHT: Product dashboard frame (80%) ── */}
-        <div className="absolute left-[20%] top-0 right-0 bottom-0 flex flex-col bg-[#f0f2f5]">
-
+        {/* RIGHT: Product dashboard (scrollable) */}
+        <div
+          ref={rightPanelRef}
+          id="right-panel"
+          className="absolute left-[20%] top-0 right-0 bottom-0 overflow-y-auto overflow-x-hidden"
+        >
           {frameUrl ? (
-            // Custom frame image — widgets overlay on top
-            <div className="relative flex-1">
-              <Image src={frameUrl} alt="dashboard frame" fill className="object-cover object-top-left" draggable={false} />
+            // Custom frame image — fully visible, widgets overlay on top
+            <div
+              style={{
+                position: 'relative',
+                width: '100%',
+                height: `${heightMultiplier * 100}%`,
+                minHeight: '100%',
+              }}
+            >
+              {/* Frame image stretched to fill exactly (fully visible, no cropping) */}
+              <div style={{ position: 'sticky', top: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+                <Image
+                  src={frameUrl}
+                  alt="dashboard frame"
+                  fill
+                  style={{ objectFit: 'fill' }}
+                  draggable={false}
+                />
+              </div>
+
               {/* Widget overlay area */}
-              <div ref={widgetAreaRef} className="absolute inset-0" style={{ cursor: dragging || resizing ? 'grabbing' : 'default' }}>
-                {renderWidgets({ layout, widgets, dragging, resizing, accentColor, onWidgetMouseDown, onResizeMouseDown })}
+              <div
+                ref={widgetAreaRef}
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  cursor: dragging || resizing ? 'grabbing' : 'default',
+                }}
+              >
+                {/* Role text overlay — AI-detected position */}
+                {roleOverlay && selectedRole && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: `${roleOverlay.x * 100}%`,
+                      top: `${roleOverlay.y * 100}%`,
+                      width: `${roleOverlay.w * 100}%`,
+                      height: `${roleOverlay.h * 100}%`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      fontFamily,
+                      color: primaryColor,
+                      fontWeight: 700,
+                      fontSize: `${roleOverlay.h * 40}cqw`,
+                      overflow: 'hidden',
+                      pointerEvents: 'none',
+                      zIndex: 5,
+                    }}
+                  >
+                    {selectedRole.avatar_emoji} {selectedRole.title}
+                  </div>
+                )}
+
+                {renderWidgets({ layout, widgets, dragging, resizing, accentColor, heightMultiplier, onWidgetMouseDown, onResizeMouseDown })}
               </div>
             </div>
           ) : (
             // CSS mock dashboard frame
-            <>
-              {/* Product top bar */}
-              <div className="flex items-center gap-[1.5%] px-[2%] shrink-0 bg-white border-b border-gray-200" style={{ height: '10%' }}>
-                <div
-                  className="text-white text-[1cqw] font-bold px-[1.5%] py-[0.8%] rounded"
-                  style={{ backgroundColor: primaryColor }}
-                >
+            <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+              {/* Sticky top bar */}
+              <div
+                className="flex items-center gap-[1.5%] px-[2%] shrink-0 bg-white border-b border-gray-200"
+                style={{ height: '10%', position: 'sticky', top: 0, zIndex: 10 }}
+              >
+                <div className="text-white text-[1cqw] font-bold px-[1.5%] py-[0.8%] rounded" style={{ backgroundColor: primaryColor }}>
                   product
                 </div>
                 <div className="flex items-center gap-[1%] bg-gray-100 rounded px-[1.5%] py-[0.5%] flex-1 max-w-[30%]">
@@ -174,7 +248,7 @@ export default function DashboardCanvas() {
                 <div className="ml-auto flex items-center gap-[1.5%]">
                   <Bell style={{ width: '1.3cqw', height: '1.3cqw' }} className="text-gray-400" />
                   <div className="flex items-center gap-[0.5%]">
-                    <div className="rounded-full bg-gray-300 flex items-center justify-center text-[0.7cqw] font-bold text-white" style={{ width: '2cqw', height: '2cqw', backgroundColor: primaryColor }}>
+                    <div className="rounded-full flex items-center justify-center text-[0.7cqw] font-bold text-white" style={{ width: '2cqw', height: '2cqw', backgroundColor: primaryColor }}>
                       {selectedRole?.avatar_emoji ?? 'U'}
                     </div>
                     <ChevronDown style={{ width: '1cqw', height: '1cqw' }} className="text-gray-400" />
@@ -182,10 +256,13 @@ export default function DashboardCanvas() {
                 </div>
               </div>
 
-              {/* Body: product sidebar + content */}
-              <div className="flex flex-1 overflow-hidden">
-                {/* Product left nav */}
-                <div className="flex flex-col py-[2%] bg-white border-r border-gray-200" style={{ width: '12%' }}>
+              {/* Body: side nav + widget area */}
+              <div style={{ display: 'flex', flex: 1 }}>
+                {/* Sticky left nav */}
+                <div
+                  className="flex flex-col py-[2%] bg-white border-r border-gray-200"
+                  style={{ width: '12%', position: 'sticky', top: '10%', alignSelf: 'flex-start', height: '90cqh' }}
+                >
                   {PRODUCT_NAV.map(({ icon: Icon, label }, i) => (
                     <div
                       key={label}
@@ -198,36 +275,43 @@ export default function DashboardCanvas() {
                   ))}
                 </div>
 
-                {/* Widget content area */}
+                {/* Scrollable widget content area */}
                 <div
                   ref={widgetAreaRef}
-                  className="relative flex-1 p-[1.5%]"
-                  style={{ cursor: dragging || resizing ? 'grabbing' : 'default' }}
+                  className="relative flex-1 bg-[#f0f2f5] p-[1.5%]"
+                  style={{
+                    height: `${heightMultiplier * 90}%`,
+                    minHeight: '90%',
+                    cursor: dragging || resizing ? 'grabbing' : 'default',
+                  }}
                 >
-                  {renderWidgets({ layout, widgets, dragging, resizing, accentColor, onWidgetMouseDown, onResizeMouseDown })}
+                  {renderWidgets({ layout, widgets, dragging, resizing, accentColor, heightMultiplier, onWidgetMouseDown, onResizeMouseDown })}
                 </div>
               </div>
-            </>
+            </div>
           )}
         </div>
       </div>
 
       <p className="text-xs text-gray-400 text-center">
         Drag widgets to reposition · Drag the corner handle to resize · Save layout when done
+        {heightMultiplier > 1.05 && (
+          <span className="ml-2 text-blue-500">· Scroll the frame to see all widgets ({Math.ceil(heightMultiplier)} pages)</span>
+        )}
       </p>
     </div>
   )
 }
 
-// Extracted so it works for both frame modes
 function renderWidgets({
-  layout, widgets, dragging, resizing, accentColor, onWidgetMouseDown, onResizeMouseDown,
+  layout, widgets, dragging, resizing, accentColor, heightMultiplier, onWidgetMouseDown, onResizeMouseDown,
 }: {
   layout: WidgetLayout[]
   widgets: ReturnType<typeof useBuilderStore.getState>['widgets']
   dragging: DragState | null
   resizing: ResizeState | null
   accentColor: string
+  heightMultiplier: number
   onWidgetMouseDown: (e: React.MouseEvent, id: string) => void
   onResizeMouseDown: (e: React.MouseEvent, id: string) => void
 }) {
@@ -237,15 +321,21 @@ function renderWidgets({
     const imgSrc = widget.masked_url ?? widget.screenshot_url
     const isActive = dragging?.widgetId === item.widget_id || resizing?.widgetId === item.widget_id
 
+    // y/h are fractions of one "screen height"; convert to % of the full scrollable area
+    const topPct = (item.y / heightMultiplier) * 100
+    const heightPct = (item.h / heightMultiplier) * 100
+    const leftPct = item.x * 100
+    const widthPct = item.w * 100
+
     return (
       <div
         key={item.widget_id}
         className="absolute rounded-lg overflow-hidden border border-gray-200 bg-white shadow-md group"
         style={{
-          left: `${item.x * 100}%`,
-          top: `${item.y * 100}%`,
-          width: `${item.w * 100}%`,
-          height: `${item.h * 100}%`,
+          left: `${leftPct}%`,
+          top: `${topPct}%`,
+          width: `${widthPct}%`,
+          height: `${heightPct}%`,
           cursor: 'grab',
           zIndex: isActive ? 20 : 1,
           boxShadow: isActive ? `0 0 0 2px ${accentColor}` : undefined,
@@ -260,12 +350,10 @@ function renderWidgets({
           </div>
         )}
 
-        {/* Label on hover */}
         <div className="absolute bottom-0 left-0 right-0 bg-black/50 text-white px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity truncate" style={{ fontSize: '0.65cqw' }}>
           {widget.name}
         </div>
 
-        {/* Resize handle */}
         <div
           className="absolute bottom-0 right-0 opacity-0 group-hover:opacity-100 cursor-se-resize"
           style={{ width: '1.2cqw', height: '1.2cqw', backgroundColor: accentColor }}

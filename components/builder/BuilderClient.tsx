@@ -1,13 +1,14 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useBuilderStore } from '@/store/builderStore'
 import { createClient } from '@/lib/supabase/client'
 import type { Branding, VerticalWithRoles, Widget, WidgetLayout, RoleWidget } from '@/lib/supabase/types'
 import VerticalRoleSelector from './VerticalRoleSelector'
 import DashboardCanvas from './DashboardCanvas'
 import ExportPanel from './ExportPanel'
-import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react'
+import { ZoomIn, ZoomOut, Maximize2, Sparkles, Loader2 } from 'lucide-react'
+import type { LayoutSuggestion } from '@/app/api/suggest-layout/route'
 
 const ZOOM_STEPS = [0.4, 0.5, 0.6, 0.75, 0.9, 1.0]
 
@@ -16,19 +17,23 @@ interface Props {
   branding: Branding | null
 }
 
-// Default AI-suggested grid layout for up to 5 widgets
-function suggestLayout(widgets: Widget[]): WidgetLayout[] {
-  const placements: Omit<WidgetLayout, 'widget_id'>[] = [
-    { x: 0.02, y: 0.02, w: 0.46, h: 0.46 },
-    { x: 0.52, y: 0.02, w: 0.46, h: 0.46 },
-    { x: 0.02, y: 0.52, w: 0.30, h: 0.44 },
-    { x: 0.35, y: 0.52, w: 0.30, h: 0.44 },
-    { x: 0.68, y: 0.52, w: 0.30, h: 0.44 },
-  ]
-  return widgets.slice(0, 5).map((w, i) => ({
-    widget_id: w.id,
-    ...(placements[i] ?? { x: 0.1 * i, y: 0.1 * i, w: 0.3, h: 0.3 }),
-  }))
+// Fallback grid layout used when no AI and no saved layout
+function defaultLayout(widgets: Widget[]): WidgetLayout[] {
+  const cols = widgets.length <= 2 ? widgets.length : widgets.length <= 4 ? 2 : 3
+  return widgets.map((w, i) => {
+    const col = i % cols
+    const row = Math.floor(i / cols)
+    const gap = 0.01
+    const itemW = (1 - gap * (cols + 1)) / cols
+    const itemH = Math.min(0.45, (1 - gap * 3) / Math.ceil(widgets.length / cols))
+    return {
+      widget_id: w.id,
+      x: gap + col * (itemW + gap),
+      y: gap + row * (itemH + gap),
+      w: itemW,
+      h: itemH,
+    }
+  })
 }
 
 export default function BuilderClient({ verticals, branding }: Props) {
@@ -36,33 +41,25 @@ export default function BuilderClient({ verticals, branding }: Props) {
   const {
     selectedVertical, selectedRole,
     widgets, layout,
-    setWidgets, setLayout, setBranding,
+    setWidgets, setLayout, setBranding, setRoleOverlay,
   } = useBuilderStore()
 
   const [loadingWidgets, setLoadingWidgets] = useState(false)
   const [savingLayout, setSavingLayout] = useState(false)
   const [savedMsg, setSavedMsg] = useState(false)
-  const [zoom, setZoom] = useState(1.0)
-  const canvasWrapperRef = useRef<HTMLDivElement>(null)
+  const [zoom, setZoom] = useState(0.75)
+  const [suggestingLayout, setSuggestingLayout] = useState(false)
+  const [suggestError, setSuggestError] = useState<string | null>(null)
 
   function zoomOut() {
-    setZoom(z => {
-      const idx = ZOOM_STEPS.indexOf(z)
-      return idx > 0 ? ZOOM_STEPS[idx - 1] : z
-    })
+    setZoom(z => { const idx = ZOOM_STEPS.indexOf(z); return idx > 0 ? ZOOM_STEPS[idx - 1] : z })
   }
   function zoomIn() {
-    setZoom(z => {
-      const idx = ZOOM_STEPS.indexOf(z)
-      return idx < ZOOM_STEPS.length - 1 ? ZOOM_STEPS[idx + 1] : z
-    })
+    setZoom(z => { const idx = ZOOM_STEPS.indexOf(z); return idx < ZOOM_STEPS.length - 1 ? ZOOM_STEPS[idx + 1] : z })
   }
 
-  useEffect(() => {
-    setBranding(branding)
-  }, [branding, setBranding])
+  useEffect(() => { setBranding(branding) }, [branding, setBranding])
 
-  // Load widgets + saved layout whenever role changes
   useEffect(() => {
     if (!selectedRole || !selectedVertical) { setWidgets([]); setLayout([]); return }
 
@@ -92,13 +89,45 @@ export default function BuilderClient({ verticals, branding }: Props) {
       if (savedJson && Array.isArray(savedJson) && savedJson.length > 0) {
         setLayout(savedJson as WidgetLayout[])
       } else {
-        setLayout(suggestLayout(widgetList))
+        setLayout(defaultLayout(widgetList))
       }
     }
 
     load()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRole?.id])
+
+  async function suggestLayout() {
+    if (widgets.length === 0) return
+    setSuggestingLayout(true)
+    setSuggestError(null)
+
+    try {
+      const frameUrl = (branding as (typeof branding & { frame_url?: string | null }))?.frame_url ?? null
+
+      const res = await fetch('/api/suggest-layout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ frameUrl, widgetCount: widgets.length }),
+      })
+      const data: LayoutSuggestion = await res.json()
+      if (!res.ok) throw new Error('Layout suggestion failed')
+
+      const newLayout: WidgetLayout[] = widgets.map((w, i) => ({
+        widget_id: w.id,
+        ...(data.widgets[i] ?? { x: 0.01, y: 0.01 + i * 0.5, w: 0.47, h: 0.47 }),
+      }))
+      setLayout(newLayout)
+
+      if (data.roleOverlay) {
+        setRoleOverlay(data.roleOverlay)
+      }
+    } catch (err) {
+      setSuggestError(err instanceof Error ? err.message : 'Failed')
+    } finally {
+      setSuggestingLayout(false)
+    }
+  }
 
   async function saveLayout() {
     if (!selectedVertical || !selectedRole) return
@@ -125,37 +154,29 @@ export default function BuilderClient({ verticals, branding }: Props) {
           <div className="flex items-center gap-2 flex-wrap">
             {/* Zoom controls */}
             <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-1">
-              <button
-                onClick={zoomOut}
-                disabled={zoom === ZOOM_STEPS[0]}
-                className="p-1.5 rounded text-gray-500 hover:text-gray-900 disabled:opacity-30"
-                title="Zoom out"
-              >
+              <button onClick={zoomOut} disabled={zoom === ZOOM_STEPS[0]} className="p-1.5 rounded text-gray-500 hover:text-gray-900 disabled:opacity-30" title="Zoom out">
                 <ZoomOut className="w-4 h-4" />
               </button>
-              <button
-                onClick={() => setZoom(1.0)}
-                className="px-2 text-xs font-mono text-gray-600 hover:text-gray-900 min-w-[3rem] text-center"
-                title="Reset zoom"
-              >
+              <button onClick={() => setZoom(0.75)} className="px-2 text-xs font-mono text-gray-600 hover:text-gray-900 min-w-[3rem] text-center" title="Reset zoom">
                 {Math.round(zoom * 100)}%
               </button>
-              <button
-                onClick={zoomIn}
-                disabled={zoom === ZOOM_STEPS[ZOOM_STEPS.length - 1]}
-                className="p-1.5 rounded text-gray-500 hover:text-gray-900 disabled:opacity-30"
-                title="Zoom in"
-              >
+              <button onClick={zoomIn} disabled={zoom === ZOOM_STEPS[ZOOM_STEPS.length - 1]} className="p-1.5 rounded text-gray-500 hover:text-gray-900 disabled:opacity-30" title="Zoom in">
                 <ZoomIn className="w-4 h-4" />
               </button>
-              <button
-                onClick={() => setZoom(0.5)}
-                className="p-1.5 rounded text-gray-500 hover:text-gray-900"
-                title="Fit to screen"
-              >
+              <button onClick={() => setZoom(0.5)} className="p-1.5 rounded text-gray-500 hover:text-gray-900" title="Fit to screen">
                 <Maximize2 className="w-4 h-4" />
               </button>
             </div>
+
+            <button
+              onClick={suggestLayout}
+              disabled={suggestingLayout || widgets.length === 0}
+              className="flex items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-3 py-2 text-sm text-purple-700 hover:bg-purple-100 disabled:opacity-50"
+              title="Use AI to arrange widgets within the frame"
+            >
+              {suggestingLayout ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              {suggestingLayout ? 'Arranging…' : 'AI Arrange'}
+            </button>
 
             <button
               onClick={saveLayout}
@@ -169,6 +190,12 @@ export default function BuilderClient({ verticals, branding }: Props) {
         )}
       </div>
 
+      {suggestError && (
+        <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-600">
+          AI arrange failed: {suggestError}
+        </div>
+      )}
+
       <VerticalRoleSelector verticals={verticals} />
 
       {selectedRole && (
@@ -181,11 +208,10 @@ export default function BuilderClient({ verticals, branding }: Props) {
             Go to <strong>Verticals</strong> to assign widgets to this role.
           </div>
         ) : (
-          /* Zoom wrapper — scales canvas visually without affecting drag coordinates */
+          /* Zoom wrapper */
           <div
-            ref={canvasWrapperRef}
-            className="overflow-hidden rounded-xl"
-            style={{ height: `calc(${zoom} * (100vw - 3rem) / (16/9) * 0.82)` }}
+            className="overflow-auto rounded-xl"
+            style={{ maxHeight: '80vh' }}
           >
             <div
               style={{

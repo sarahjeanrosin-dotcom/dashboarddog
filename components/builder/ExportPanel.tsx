@@ -5,32 +5,48 @@ import { useBuilderStore } from '@/store/builderStore'
 import { Download, ChevronDown } from 'lucide-react'
 
 export default function ExportPanel() {
-  const { selectedRole, selectedVertical, widgets, layout, branding, setIsExporting } = useBuilderStore()
+  const { selectedRole, selectedVertical, layout, branding, setIsExporting } = useBuilderStore()
   const [open, setOpen] = useState(false)
   const [exporting, setExporting] = useState<'pptx' | 'pdf' | null>(null)
+
+  const primary = branding?.primary_color ?? '#1a56db'
+  const accent = branding?.accent_color ?? '#e3a008'
+  const font = branding?.font_family ?? 'Inter'
+  const filename = `${selectedVertical?.slug ?? 'dashboard'}-${selectedRole?.title?.toLowerCase().replace(/\s+/g, '-') ?? 'role'}`
+
+  // How many slides worth of content do we have?
+  function getPageCount() {
+    const maxBottom = layout.reduce((max, item) => Math.max(max, item.y + item.h), 1)
+    return Math.ceil(maxBottom)
+  }
 
   async function exportPDF() {
     setExporting('pdf')
     setIsExporting(true)
     setOpen(false)
 
-    // Dynamic import to avoid SSR issues
     const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
       import('jspdf'),
       import('html2canvas'),
     ])
 
-    const canvas = document.getElementById('dashboard-canvas')
-    if (!canvas) { setExporting(null); setIsExporting(false); return }
+    const canvasEl = document.getElementById('dashboard-canvas')
+    if (!canvasEl) { setExporting(null); setIsExporting(false); return }
 
-    const canvasEl = await html2canvas(canvas as HTMLElement, { scale: 2, useCORS: true })
-    const imgData = canvasEl.toDataURL('image/png')
+    // Temporarily show full scroll content for capture
+    const rightPanel = document.getElementById('right-panel')
+    const originalOverflow = rightPanel?.style.overflowY ?? ''
+    const originalScrollTop = rightPanel?.scrollTop ?? 0
+    if (rightPanel) { rightPanel.style.overflowY = 'visible'; rightPanel.scrollTop = 0 }
 
-    const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [canvasEl.width / 2, canvasEl.height / 2] })
-    pdf.addImage(imgData, 'PNG', 0, 0, canvasEl.width / 2, canvasEl.height / 2)
+    await new Promise(r => setTimeout(r, 100))
+    const screenshotEl = await html2canvas(canvasEl as HTMLElement, { scale: 2, useCORS: true })
 
-    const filename = `${selectedVertical?.slug ?? 'dashboard'}-${selectedRole?.title?.toLowerCase().replace(/\s+/g, '-') ?? 'role'}.pdf`
-    pdf.save(filename)
+    if (rightPanel) { rightPanel.style.overflowY = originalOverflow; rightPanel.scrollTop = originalScrollTop }
+
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [screenshotEl.width / 2, screenshotEl.height / 2] })
+    pdf.addImage(screenshotEl.toDataURL('image/png'), 'PNG', 0, 0, screenshotEl.width / 2, screenshotEl.height / 2)
+    pdf.save(`${filename}.pdf`)
 
     setExporting(null)
     setIsExporting(false)
@@ -46,53 +62,77 @@ export default function ExportPanel() {
       import('html2canvas'),
     ])
 
-    const canvas = document.getElementById('dashboard-canvas')
-    if (!canvas) { setExporting(null); setIsExporting(false); return }
-
-    const canvasEl = await html2canvas(canvas as HTMLElement, { scale: 2, useCORS: true })
-    const imgData = canvasEl.toDataURL('image/png')
+    const canvasEl = document.getElementById('dashboard-canvas')
+    const rightPanel = document.getElementById('right-panel')
+    if (!canvasEl || !rightPanel) { setExporting(null); setIsExporting(false); return }
 
     const pptx = new PptxGenJS()
-    pptx.layout = 'LAYOUT_WIDE'
+    pptx.layout = 'LAYOUT_WIDE' // 13.33" x 7.5"
 
-    const slide = pptx.addSlide()
+    const pageCount = getPageCount()
+    const onePageHeight = rightPanel.clientHeight
 
-    // Sidebar
-    const primary = branding?.primary_color ?? '#1a56db'
-    const accent = branding?.accent_color ?? '#e3a008'
-    const font = branding?.font_family ?? 'Inter'
+    for (let page = 0; page < pageCount; page++) {
+      // Scroll to the right position
+      rightPanel.scrollTop = page * onePageHeight
+      await new Promise(r => setTimeout(r, 80))
 
-    slide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: 2.4, h: 7.5, fill: { color: primary.replace('#', '') } })
+      const screenshotEl = await html2canvas(canvasEl as HTMLElement, { scale: 2, useCORS: true })
+      const imgData = screenshotEl.toDataURL('image/png')
 
-    if (selectedVertical?.name) {
-      slide.addText(selectedVertical.name.toUpperCase(), {
-        x: 0.2, y: 5.5, w: 2, h: 0.35,
-        fontSize: 8, bold: true, color: 'FFFFFF', fontFace: font, valign: 'middle',
+      const slide = pptx.addSlide()
+
+      // Branded left sidebar
+      slide.addShape(pptx.ShapeType.rect, {
+        x: 0, y: 0, w: 2.4, h: 7.5,
+        fill: { color: primary.replace('#', '') },
       })
-    }
 
-    if (selectedRole) {
-      slide.addText(`${selectedRole.avatar_emoji} ${selectedRole.title}`, {
-        x: 0.2, y: 5.9, w: 2, h: 0.6,
-        fontSize: 14, bold: true, color: 'FFFFFF', fontFace: font, valign: 'middle', wrap: true,
-      })
-      if (selectedRole.blurb) {
-        slide.addText(selectedRole.blurb, {
-          x: 0.2, y: 6.55, w: 2, h: 0.7,
-          fontSize: 9, color: 'FFFFFFAA', fontFace: font, valign: 'top', wrap: true,
+      if (branding?.logo_url) {
+        try {
+          slide.addImage({ path: branding.logo_url, x: 0.2, y: 0.3, w: 1.8, h: 0.6 })
+        } catch { /* ignore logo errors */ }
+      }
+
+      if (selectedVertical?.name) {
+        slide.addText(selectedVertical.name.toUpperCase(), {
+          x: 0.2, y: 5.3, w: 2, h: 0.35,
+          fontSize: 8, bold: true, color: 'FFFFFF', fontFace: font,
         })
       }
+      if (selectedRole) {
+        slide.addText(`${selectedRole.avatar_emoji} ${selectedRole.title}`, {
+          x: 0.2, y: 5.7, w: 2, h: 0.6,
+          fontSize: 13, bold: true, color: 'FFFFFF', fontFace: font, wrap: true,
+        })
+        if (selectedRole.blurb) {
+          slide.addText(selectedRole.blurb, {
+            x: 0.2, y: 6.35, w: 2, h: 0.8,
+            fontSize: 9, color: 'FFFFFFAA', fontFace: font, wrap: true,
+          })
+        }
+      }
+      slide.addShape(pptx.ShapeType.rect, {
+        x: 0.2, y: 7.2, w: 0.8, h: 0.08,
+        fill: { color: accent.replace('#', '') },
+      })
+
+      // Page indicator (if multi-page)
+      if (pageCount > 1) {
+        slide.addText(`${page + 1} / ${pageCount}`, {
+          x: 11.5, y: 7.1, w: 1.5, h: 0.3,
+          fontSize: 9, color: '999999', align: 'right',
+        })
+      }
+
+      // Full dashboard screenshot (fills the whole slide including sidebar)
+      slide.addImage({ data: imgData, x: 0, y: 0, w: 13.33, h: 7.5 })
     }
 
-    // Accent bar
-    slide.addShape(pptx.ShapeType.rect, { x: 0.2, y: 7.2, w: 0.8, h: 0.08, fill: { color: accent.replace('#', '') } })
+    // Reset scroll
+    rightPanel.scrollTop = 0
 
-    // Dashboard screenshot (main panel)
-    slide.addImage({ data: imgData, x: 2.5, y: 0.2, w: 10.3, h: 7.1 })
-
-    const filename = `${selectedVertical?.slug ?? 'dashboard'}-${selectedRole?.title?.toLowerCase().replace(/\s+/g, '-') ?? 'role'}.pptx`
-    await pptx.writeFile({ fileName: filename })
-
+    await pptx.writeFile({ fileName: `${filename}.pptx` })
     setExporting(null)
     setIsExporting(false)
   }
@@ -110,18 +150,15 @@ export default function ExportPanel() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-1 w-40 rounded-xl border border-gray-200 bg-white shadow-lg z-50 overflow-hidden">
-          <button
-            onClick={exportPDF}
-            className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
-          >
+        <div className="absolute right-0 top-full mt-1 w-48 rounded-xl border border-gray-200 bg-white shadow-lg z-50 overflow-hidden">
+          <button onClick={exportPDF} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
             Export as PDF
           </button>
-          <button
-            onClick={exportPPTX}
-            className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50"
-          >
+          <button onClick={exportPPTX} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50">
             Export as .pptx
+            {getPageCount() > 1 && (
+              <span className="ml-1.5 text-xs text-purple-600">({getPageCount()} slides)</span>
+            )}
           </button>
         </div>
       )}

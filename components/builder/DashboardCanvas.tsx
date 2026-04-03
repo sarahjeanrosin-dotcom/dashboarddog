@@ -40,6 +40,7 @@ const PRODUCT_NAV = [
 export default function DashboardCanvas() {
   const { widgets, layout, updateWidgetPosition, branding, selectedRole, selectedVertical, roleOverlay } = useBuilderStore()
   const widgetAreaRef = useRef<HTMLDivElement>(null)
+  const rightPanelRef = useRef<HTMLDivElement>(null)
 
   const [dragging, setDragging] = useState<DragState | null>(null)
   const [resizing, setResizing] = useState<ResizeState | null>(null)
@@ -144,6 +145,7 @@ export default function DashboardCanvas() {
 
         {/* RIGHT: Scrollable product frame */}
         <div
+          ref={rightPanelRef}
           id="right-panel"
           className="absolute left-[20%] top-0 right-0 bottom-0 overflow-y-auto overflow-x-hidden"
         >
@@ -153,18 +155,29 @@ export default function DashboardCanvas() {
                 <Image src={frameUrl} alt="dashboard frame" fill style={{ objectFit: 'fill' }} draggable={false} />
               </div>
               <div ref={widgetAreaRef} style={{ position: 'absolute', inset: 0, cursor: dragging || resizing ? 'grabbing' : 'default' }}>
+                {/* Role text overlay \u2014 covers \"ROLE HERE\" placeholder with white bg */}
                 {roleOverlay && selectedRole && (
-                  <div style={{
-                    position: 'absolute',
-                    left: `${roleOverlay.x * 100}%`,
-                    top: `${roleOverlay.y * 100}%`,
-                    width: `${roleOverlay.w * 100}%`,
-                    height: `${roleOverlay.h * 100}%`,
-                    display: 'flex', alignItems: 'center',
-                    fontFamily, color: primaryColor, fontWeight: 700,
-                    fontSize: `${roleOverlay.h * 40}cqw`,
-                    overflow: 'hidden', pointerEvents: 'none', zIndex: 5,
-                  }}>
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: `${roleOverlay.x * 100}%`,
+                      top: `${roleOverlay.y * 100}%`,
+                      width: `${roleOverlay.w * 100}%`,
+                      height: `${roleOverlay.h * 100}%`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      paddingLeft: '4%',
+                      fontFamily,
+                      backgroundColor: 'rgba(255,255,255,0.97)',
+                      color: '#111827',
+                      fontWeight: 600,
+                      fontSize: `clamp(0.5cqw, ${roleOverlay.h * 65}%, 1.4cqw)`,
+                      overflow: 'hidden',
+                      whiteSpace: 'nowrap',
+                      pointerEvents: 'none',
+                      zIndex: 5,
+                    }}
+                  >
                     {selectedRole.avatar_emoji} {selectedRole.title}
                   </div>
                 )}
@@ -177,7 +190,7 @@ export default function DashboardCanvas() {
                 <div className="text-white text-[1cqw] font-bold px-[1.5%] py-[0.8%] rounded" style={{ backgroundColor: primaryColor }}>product</div>
                 <div className="flex items-center gap-[1%] bg-gray-100 rounded px-[1.5%] py-[0.5%] flex-1 max-w-[30%]">
                   <Search className="shrink-0 text-gray-400" style={{ width: '1.2cqw', height: '1.2cqw' }} />
-                  <span className="text-[0.8cqw] text-gray-400">Search…</span>
+                  <span className="text-[0.8cqw] text-gray-400">Search\u2026</span>
                 </div>
                 <div className="ml-auto flex items-center gap-[1.5%]">
                   <Bell style={{ width: '1.3cqw', height: '1.3cqw' }} className="text-gray-400" />
@@ -206,8 +219,8 @@ export default function DashboardCanvas() {
       </div>
 
       <p className="text-xs text-gray-400 text-center">
-        Drag widgets to reposition · Drag the corner handle to resize · Save layout when done
-        {heightMultiplier > 1.05 && <span className="ml-2 text-blue-500">· Scroll the frame to see all widgets ({Math.ceil(heightMultiplier)} pages)</span>}
+        Drag widgets to reposition \u00b7 Drag the corner handle to resize \u00b7 Save layout when done
+        {heightMultiplier > 1.05 && <span className="ml-2 text-blue-500">\u00b7 Scroll the frame to see all widgets ({Math.ceil(heightMultiplier)} pages)</span>}
       </p>
     </div>
   )
@@ -247,7 +260,7 @@ function renderWidgets({ layout, widgets, dragging, resizing, accentColor, heigh
         onMouseDown={e => onWidgetMouseDown(e, item.widget_id)}
       >
         {imgSrc ? (
-          <Image src={imgSrc} alt={widget.name} fill className="object-cover" draggable={false} />
+          <Image src={imgSrc} alt={widget.name} fill className="object-contain" draggable={false} />
         ) : (
           <div className="flex items-center justify-center h-full bg-gray-100 text-gray-400 p-2 text-center" style={{ fontSize: '0.75cqw' }}>{widget.name}</div>
         )}

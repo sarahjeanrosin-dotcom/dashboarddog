@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useBuilderStore } from '@/store/builderStore'
 import { createClient } from '@/lib/supabase/client'
-import type { Branding, VerticalWithRoles, Widget, WidgetLayout, RoleWidget, Json } from '@/lib/supabase/types'
+import type { Branding, VerticalWithRoles, Widget, WidgetLayout, RoleWidget } from '@/lib/supabase/types'
 import VerticalRoleSelector from './VerticalRoleSelector'
 import DashboardCanvas from './DashboardCanvas'
 import ExportPanel from './ExportPanel'
@@ -103,8 +103,7 @@ export default function BuilderClient({ verticals, branding }: Props) {
   async function saveLayout() {
     if (!selectedVertical || !selectedRole) return
     setSavingLayout(true)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await (supabase as any).from('dashboard_layouts').upsert({
+    await supabase.from('dashboard_layouts').upsert({
       vertical_id: selectedVertical.id,
       role_id: selectedRole.id,
       layout_json: layout,

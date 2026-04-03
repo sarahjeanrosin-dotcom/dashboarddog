@@ -79,7 +79,7 @@ export default function BuilderClient({ verticals, branding }: Props) {
           .select('layout_json')
           .eq('vertical_id', selectedVertical!.id)
           .eq('role_id', selectedRole!.id)
-          .maybeSingle(),
+          .maybeSingle() as Promise<{ data: { layout_json: unknown } | null, error: unknown }>,
       ])
       setLoadingWidgets(false)
 
@@ -87,7 +87,7 @@ export default function BuilderClient({ verticals, branding }: Props) {
       const widgetList = rw.map(r => r.widget)
       setWidgets(widgetList)
 
-      const savedJson = layoutResult.data?.layout_json
+      const savedJson = (layoutResult.data as { layout_json: unknown } | null)?.layout_json
       if (savedJson && Array.isArray(savedJson) && savedJson.length > 0) {
         setLayout(savedJson as WidgetLayout[])
       } else {

@@ -1,12 +1,15 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useBuilderStore } from '@/store/builderStore'
 import { createClient } from '@/lib/supabase/client'
 import type { Branding, VerticalWithRoles, Widget, WidgetLayout, RoleWidget } from '@/lib/supabase/types'
 import VerticalRoleSelector from './VerticalRoleSelector'
 import DashboardCanvas from './DashboardCanvas'
 import ExportPanel from './ExportPanel'
+import { ZoomIn, ZoomOut, Maximize2 } from 'lucide-react'
+
+const ZOOM_STEPS = [0.4, 0.5, 0.6, 0.75, 0.9, 1.0]
 
 interface Props {
   verticals: VerticalWithRoles[]
@@ -39,6 +42,21 @@ export default function BuilderClient({ verticals, branding }: Props) {
   const [loadingWidgets, setLoadingWidgets] = useState(false)
   const [savingLayout, setSavingLayout] = useState(false)
   const [savedMsg, setSavedMsg] = useState(false)
+  const [zoom, setZoom] = useState(1.0)
+  const canvasWrapperRef = useRef<HTMLDivElement>(null)
+
+  function zoomOut() {
+    setZoom(z => {
+      const idx = ZOOM_STEPS.indexOf(z)
+      return idx > 0 ? ZOOM_STEPS[idx - 1] : z
+    })
+  }
+  function zoomIn() {
+    setZoom(z => {
+      const idx = ZOOM_STEPS.indexOf(z)
+      return idx < ZOOM_STEPS.length - 1 ? ZOOM_STEPS[idx + 1] : z
+    })
+  }
 
   useEffect(() => {
     setBranding(branding)
@@ -102,7 +120,41 @@ export default function BuilderClient({ verticals, branding }: Props) {
           <p className="text-sm text-gray-500 mt-0.5">Select a vertical and role to assemble a dashboard.</p>
         </div>
         {selectedRole && (
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Zoom controls */}
+            <div className="flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-1">
+              <button
+                onClick={zoomOut}
+                disabled={zoom === ZOOM_STEPS[0]}
+                className="p-1.5 rounded text-gray-500 hover:text-gray-900 disabled:opacity-30"
+                title="Zoom out"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setZoom(1.0)}
+                className="px-2 text-xs font-mono text-gray-600 hover:text-gray-900 min-w-[3rem] text-center"
+                title="Reset zoom"
+              >
+                {Math.round(zoom * 100)}%
+              </button>
+              <button
+                onClick={zoomIn}
+                disabled={zoom === ZOOM_STEPS[ZOOM_STEPS.length - 1]}
+                className="p-1.5 rounded text-gray-500 hover:text-gray-900 disabled:opacity-30"
+                title="Zoom in"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setZoom(0.5)}
+                className="p-1.5 rounded text-gray-500 hover:text-gray-900"
+                title="Fit to screen"
+              >
+                <Maximize2 className="w-4 h-4" />
+              </button>
+            </div>
+
             <button
               onClick={saveLayout}
               disabled={savingLayout}
@@ -127,7 +179,22 @@ export default function BuilderClient({ verticals, branding }: Props) {
             Go to <strong>Verticals</strong> to assign widgets to this role.
           </div>
         ) : (
-          <DashboardCanvas />
+          /* Zoom wrapper — scales canvas visually without affecting drag coordinates */
+          <div
+            ref={canvasWrapperRef}
+            className="overflow-hidden rounded-xl"
+            style={{ height: `calc(${zoom} * (100vw - 3rem) / (16/9) * 0.82)` }}
+          >
+            <div
+              style={{
+                transform: `scale(${zoom})`,
+                transformOrigin: 'top left',
+                width: `${100 / zoom}%`,
+              }}
+            >
+              <DashboardCanvas />
+            </div>
+          </div>
         )
       )}
     </div>

@@ -2,14 +2,15 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { Role } from '@/lib/supabase/types'
-import { Plus, Trash2, Pencil, Check, X } from 'lucide-react'
+import type { Role, Widget } from '@/lib/supabase/types'
+import { Plus, Trash2, Pencil, Check, X, LayoutGrid, ChevronDown, ChevronRight } from 'lucide-react'
 
 const EMOJI_OPTIONS = ['👤', '🏢', '🔒', '📊', '💼', '🛡️', '🔑', '📋', '🏗️', '⚙️']
 
 interface Props {
   verticalId: string
   initialRoles: Role[]
+  allWidgets: Pick<Widget, 'id' | 'name' | 'screenshot_url' | 'masked_url'>[]
   onRolesChange: (roles: Role[]) => void
 }
 
@@ -19,13 +20,18 @@ interface EditState {
   avatar_emoji: string
 }
 
-export default function RolesManager({ verticalId, initialRoles, onRolesChange }: Props) {
+export default function RolesManager({ verticalId, initialRoles, allWidgets, onRolesChange }: Props) {
   const supabase = createClient()
   const [roles, setRoles] = useState<Role[]>(initialRoles)
   const [newRole, setNewRole] = useState<EditState>({ title: '', blurb: '', avatar_emoji: '👤' })
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editState, setEditState] = useState<EditState>({ title: '', blurb: '', avatar_emoji: '👤' })
   const [showAddForm, setShowAddForm] = useState(false)
+
+  // Widget assignment state: roleId → Set of assigned widget IDs
+  const [assignedWidgets, setAssignedWidgets] = useState<Record<string, Set<string>>>({})
+  const [expandedWidgetsRoleId, setExpandedWidgetsRoleId] = useState<string | null>(null)
+  const [loadingWidgets, setLoadingWidgets] = useState<string | null>(null)
 
   function updateRoles(updated: Role[]) {
     setRoles(updated)
@@ -59,6 +65,48 @@ export default function RolesManager({ verticalId, initialRoles, onRolesChange }
     setEditingId(null)
   }
 
+  async function toggleWidgets(roleId: string) {
+    if (expandedWidgetsRoleId === roleId) {
+      setExpandedWidgetsRoleId(null)
+      return
+    }
+    if (!assignedWidgets[roleId]) {
+      setLoadingWidgets(roleId)
+      const { data } = await supabase
+        .from('role_widgets')
+        .select('widget_id')
+        .eq('role_id', roleId)
+      setAssignedWidgets(prev => ({
+        ...prev,
+        [roleId]: new Set((data ?? []).map(r => r.widget_id)),
+      }))
+      setLoadingWidgets(null)
+    }
+    setExpandedWidgetsRoleId(roleId)
+  }
+
+  async function toggleWidget(roleId: string, widgetId: string) {
+    const current = assignedWidgets[roleId] ?? new Set<string>()
+    if (current.has(widgetId)) {
+      await supabase
+        .from('role_widgets')
+        .delete()
+        .eq('role_id', roleId)
+        .eq('widget_id', widgetId)
+      const next = new Set(current)
+      next.delete(widgetId)
+      setAssignedWidgets(prev => ({ ...prev, [roleId]: next }))
+    } else {
+      const position = current.size
+      await supabase
+        .from('role_widgets')
+        .insert({ role_id: roleId, widget_id: widgetId, position })
+      const next = new Set(current)
+      next.add(widgetId)
+      setAssignedWidgets(prev => ({ ...prev, [roleId]: next }))
+    }
+  }
+
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between mb-2">
@@ -71,7 +119,6 @@ export default function RolesManager({ verticalId, initialRoles, onRolesChange }
         </button>
       </div>
 
-      {/* Add role form */}
       {showAddForm && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 space-y-2">
           <div className="flex gap-2">
@@ -111,11 +158,10 @@ export default function RolesManager({ verticalId, initialRoles, onRolesChange }
         </div>
       )}
 
-      {/* Role list */}
       {roles.map(role => (
-        <div key={role.id} className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+        <div key={role.id} className="rounded-lg border border-gray-200 bg-white overflow-hidden">
           {editingId === role.id ? (
-            <div className="space-y-2">
+            <div className="p-3 space-y-2">
               <div className="flex gap-2">
                 <select
                   value={editState.avatar_emoji}
@@ -146,22 +192,66 @@ export default function RolesManager({ verticalId, initialRoles, onRolesChange }
               </div>
             </div>
           ) : (
-            <div className="flex items-start gap-2">
-              <span className="text-lg leading-none mt-0.5">{role.avatar_emoji}</span>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900">{role.title}</p>
-                {role.blurb && <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{role.blurb}</p>}
+            <>
+              <div className="flex items-start gap-2 px-3 py-2">
+                <span className="text-lg leading-none mt-0.5">{role.avatar_emoji}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900">{role.title}</p>
+                  {role.blurb && <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{role.blurb}</p>}
+                </div>
+                <button
+                  onClick={() => { setEditingId(role.id); setEditState({ title: role.title, blurb: role.blurb, avatar_emoji: role.avatar_emoji }) }}
+                  className="p-1 text-gray-400 hover:text-gray-700"
+                  title="Edit role"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={() => deleteRole(role.id)} className="p-1 text-gray-400 hover:text-red-600" title="Delete role">
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
               </div>
+
               <button
-                onClick={() => { setEditingId(role.id); setEditState({ title: role.title, blurb: role.blurb, avatar_emoji: role.avatar_emoji }) }}
-                className="p-1 text-gray-400 hover:text-gray-700"
+                onClick={() => toggleWidgets(role.id)}
+                className="w-full flex items-center gap-1.5 border-t border-gray-100 px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-50 hover:text-blue-600"
               >
-                <Pencil className="w-3.5 h-3.5" />
+                <LayoutGrid className="w-3.5 h-3.5" />
+                <span>
+                  {assignedWidgets[role.id]
+                    ? `${assignedWidgets[role.id].size} widget${assignedWidgets[role.id].size !== 1 ? 's' : ''} assigned`
+                    : 'Assign widgets'}
+                </span>
+                {loadingWidgets === role.id
+                  ? <span className="ml-auto text-gray-400">Loading…</span>
+                  : expandedWidgetsRoleId === role.id
+                    ? <ChevronDown className="w-3.5 h-3.5 ml-auto" />
+                    : <ChevronRight className="w-3.5 h-3.5 ml-auto" />}
               </button>
-              <button onClick={() => deleteRole(role.id)} className="p-1 text-gray-400 hover:text-red-600">
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
-            </div>
+
+              {expandedWidgetsRoleId === role.id && assignedWidgets[role.id] && (
+                <div className="border-t border-gray-100 bg-gray-50 px-3 py-2 space-y-1">
+                  {allWidgets.length === 0 ? (
+                    <p className="text-xs text-gray-400 py-1">No widgets yet — add some in the Widgets tab.</p>
+                  ) : allWidgets.map(widget => {
+                    const checked = assignedWidgets[role.id].has(widget.id)
+                    return (
+                      <label key={widget.id} className="flex items-center gap-2 cursor-pointer rounded px-1 py-1 hover:bg-gray-100">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleWidget(role.id, widget.id)}
+                          className="w-3.5 h-3.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <span className="text-xs text-gray-700">{widget.name}</span>
+                        {checked && (
+                          <span className="ml-auto text-xs text-green-600 font-medium">✓</span>
+                        )}
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
       ))}

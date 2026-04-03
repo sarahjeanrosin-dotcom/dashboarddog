@@ -3,19 +3,20 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import type { VerticalWithRoles } from '@/lib/supabase/types'
+import type { VerticalWithRoles, Widget } from '@/lib/supabase/types'
 import { Plus, ChevronDown, ChevronRight, Trash2, Pencil } from 'lucide-react'
 import RolesManager from './RolesManager'
 
 interface Props {
   initialVerticals: VerticalWithRoles[]
+  allWidgets: Pick<Widget, 'id' | 'name' | 'screenshot_url' | 'masked_url'>[]
 }
 
 function slugify(str: string) {
   return str.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
 }
 
-export default function VerticalsManager({ initialVerticals }: Props) {
+export default function VerticalsManager({ initialVerticals, allWidgets }: Props) {
   const router = useRouter()
   const supabase = createClient()
 
@@ -60,7 +61,6 @@ export default function VerticalsManager({ initialVerticals }: Props) {
 
   return (
     <div className="space-y-4">
-      {/* Add new vertical */}
       <div className="flex gap-2">
         <input
           value={newName}
@@ -78,11 +78,9 @@ export default function VerticalsManager({ initialVerticals }: Props) {
         </button>
       </div>
 
-      {/* Vertical list */}
       <div className="space-y-2">
         {verticals.map(vertical => (
           <div key={vertical.id} className="rounded-xl border border-gray-200 bg-white overflow-hidden">
-            {/* Header row */}
             <div className="flex items-center gap-3 px-4 py-3">
               <button
                 onClick={() => setExpandedId(expandedId === vertical.id ? null : vertical.id)}
@@ -125,12 +123,12 @@ export default function VerticalsManager({ initialVerticals }: Props) {
               </button>
             </div>
 
-            {/* Expanded roles */}
             {expandedId === vertical.id && (
               <div className="border-t border-gray-100 bg-gray-50 px-4 py-3">
                 <RolesManager
                   verticalId={vertical.id}
                   initialRoles={vertical.roles ?? []}
+                  allWidgets={allWidgets}
                   onRolesChange={roles =>
                     setVerticals(verticals.map(v =>
                       v.id === vertical.id ? { ...v, roles } : v

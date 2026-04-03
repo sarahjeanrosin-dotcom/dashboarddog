@@ -14,7 +14,6 @@ interface MaskRect {
   y: number
   width: number
   height: number
-  /** If set, renders replacement text instead of a black box */
   replacementText?: string
   bgColor?: string
 }
@@ -84,22 +83,21 @@ export default function MaskEditor({ widget, onSave, onCancel }: Props) {
         return
       }
 
-      // Convert normalized coords to pixel coords
+      const PAD = 3
       const newMasks: MaskRect[] = items.map((item, i) => {
-        const px = item.x * imgSize.w
-        const py = item.y * imgSize.h
-        const pw = item.w * imgSize.w
-        const ph = item.h * imgSize.h
+        const px = item.x * imgSize.w - PAD
+        const py = item.y * imgSize.h - PAD
+        const pw = item.w * imgSize.w + PAD * 2
+        const ph = item.h * imgSize.h + PAD * 2
 
-        // Estimate font size from box height (roughly 65% of height)
         return {
           id: `ai-${Date.now()}-${i}`,
-          x: px,
-          y: py,
-          width: Math.max(pw, 20),
-          height: Math.max(ph, 16),
+          x: Math.max(0, px),
+          y: Math.max(0, py),
+          width: Math.max(pw, 24),
+          height: Math.max(ph, 18),
           replacementText: item.replacement,
-          bgColor: '#f0f0f0',
+          bgColor: '#ffffff',
         }
       })
 
@@ -247,9 +245,8 @@ export default function MaskEditor({ widget, onSave, onCancel }: Props) {
                 height={imgSize.h}
               />
               {masks.map(mask => {
-                const fontSize = Math.max(10, Math.round(mask.height * 0.6))
+                const fontSize = Math.max(9, Math.round(mask.height * 0.55))
                 return mask.replacementText ? (
-                  // AI replacement: background rect + anonymized text
                   <>
                     <Rect
                       key={`${mask.id}-bg`}
@@ -258,9 +255,9 @@ export default function MaskEditor({ widget, onSave, onCancel }: Props) {
                       y={mask.y}
                       width={mask.width}
                       height={mask.height}
-                      fill={mask.bgColor ?? '#f0f0f0'}
-                      stroke={selectedId === mask.id ? '#8b5cf6' : '#d1d5db'}
-                      strokeWidth={selectedId === mask.id ? 2 : 1}
+                      fill={mask.bgColor ?? '#ffffff'}
+                      stroke={selectedId === mask.id ? '#8b5cf6' : 'transparent'}
+                      strokeWidth={selectedId === mask.id ? 2 : 0}
                       draggable
                       onClick={() => setSelectedId(mask.id)}
                       onTap={() => setSelectedId(mask.id)}
@@ -277,13 +274,12 @@ export default function MaskEditor({ widget, onSave, onCancel }: Props) {
                       width={mask.width - 4}
                       text={mask.replacementText}
                       fontSize={fontSize}
-                      fill="#374151"
+                      fill="#1f2937"
                       listening={false}
                       ellipsis
                     />
                   </>
                 ) : (
-                  // Manual mask: black box
                   <Rect
                     key={mask.id}
                     id={mask.id}

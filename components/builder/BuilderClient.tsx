@@ -74,7 +74,7 @@ export default function BuilderClient({ verticals, branding }: Props) {
         .eq('role_id', selectedRole!.id)
         .order('position')
 
-      const { data: layoutData } = await supabase
+      const layoutResult = await supabase
         .from('dashboard_layouts')
         .select('layout_json')
         .eq('vertical_id', selectedVertical!.id)
@@ -87,6 +87,7 @@ export default function BuilderClient({ verticals, branding }: Props) {
       const widgetList = rw.map(r => r.widget)
       setWidgets(widgetList)
 
+      const layoutData = layoutResult.data as { layout_json: unknown } | null
       const savedJson = layoutData?.layout_json
       if (savedJson && Array.isArray(savedJson) && savedJson.length > 0) {
         setLayout(savedJson as WidgetLayout[])
